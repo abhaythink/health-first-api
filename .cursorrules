@@ -1,0 +1,346 @@
+# Cursor Rules for Health First API (NestJS)
+
+## Project Overview
+This is a NestJS-based healthcare API with TypeScript, MongoDB (Mongoose), JWT authentication, and comprehensive testing. Follow these rules for consistent development.
+
+## General Development Guidelines
+
+### Code Style & Formatting
+- Use TypeScript exclusively
+- Follow Prettier configuration: single quotes, trailing commas
+- Use ESLint rules as configured (typescript-eslint recommended)
+- Maintain consistent indentation (2 spaces)
+- Use meaningful variable and function names
+- Add JSDoc comments for complex functions and classes
+
+### File Organization
+- Follow NestJS module structure: `src/{module}/{files}`
+- Group related files in module directories
+- Use consistent naming conventions:
+  - Controllers: `{module}.controller.ts`
+  - Services: `{module}.service.ts`
+  - Modules: `{module}.module.ts`
+  - DTOs: `dto/{action}-{module}.dto.ts`
+  - Schemas: `schemas/{module}.schema.ts`
+  - Tests: `tests/{module}.{type}.spec.ts`
+
+### Import Organization
+```typescript
+// 1. Node modules
+import { Injectable, BadRequestException } from '@nestjs/common';
+import { Model } from 'mongoose';
+
+// 2. Internal modules (relative imports)
+import { CreatePatientDto } from './dto/create-patient.dto';
+import { Patient } from './schemas/patient.schema';
+```
+
+## NestJS Specific Rules
+
+### Controllers
+- Keep controllers thin - delegate business logic to services
+- Use proper HTTP status codes and decorators
+- Implement proper error handling
+- Use DTOs for request/response validation
+- Apply guards and pipes at appropriate levels
+
+```typescript
+@Controller('patients')
+@UseGuards(JwtAuthGuard)
+export class PatientController {
+  constructor(private readonly patientService: PatientService) {}
+
+  @Post()
+  async create(@Body() createPatientDto: CreatePatientDto) {
+    return this.patientService.create(createPatientDto);
+  }
+}
+```
+
+### Services
+- Implement business logic in services
+- Use dependency injection properly
+- Handle errors appropriately with NestJS exceptions
+- Return consistent response formats
+- Use transactions for complex operations
+
+```typescript
+@Injectable()
+export class PatientService {
+  constructor(
+    @InjectModel(Patient.name) private patientModel: Model<PatientDocument>,
+  ) {}
+
+  async create(createPatientDto: CreatePatientDto): Promise<PatientResponse> {
+    const patient = new this.patientModel(createPatientDto);
+    const savedPatient = await patient.save();
+    return savedPatient.toJSON();
+  }
+}
+```
+
+### DTOs and Validation
+- Use class-validator decorators for validation
+- Create separate DTOs for different operations
+- Use PartialType for update DTOs
+- Include proper validation messages
+
+```typescript
+export class CreatePatientDto {
+  @IsString()
+  @IsNotEmpty()
+  firstName: string;
+
+  @IsEmail()
+  email: string;
+
+  @IsEnum(Gender)
+  gender: Gender;
+}
+```
+
+### Schemas (Mongoose)
+- Use Mongoose decorators from @nestjs/mongoose
+- Define proper indexes
+- Use enums for restricted values
+- Include timestamps
+- Transform _id to id in responses
+
+```typescript
+@Schema({ timestamps: true })
+export class Patient {
+  @Prop({ required: true })
+  firstName: string;
+
+  @Prop({ enum: Gender, required: true })
+  gender: Gender;
+}
+
+export type PatientDocument = Patient & Document;
+export const PatientSchema = SchemaFactory.createForClass(Patient);
+```
+
+## Database & Mongoose Guidelines
+
+### Connection & Configuration
+- Use environment variables for database configuration
+- Implement proper connection error handling
+- Use connection pooling appropriately
+
+### Model Operations
+- Use proper Mongoose methods (.exec() for queries)
+- Implement proper error handling for database operations
+- Use transactions for multi-document operations
+- Validate ObjectIds using custom pipes
+
+```typescript
+async findOne(id: Types.ObjectId): Promise<PatientResponse> {
+  const patient = await this.patientModel.findById(id).exec();
+  if (!patient) {
+    throw new NotFoundException(`Patient with ID ${id} not found`);
+  }
+  return patient.toJSON();
+}
+```
+
+## Authentication & Security
+
+### JWT Implementation
+- Use proper JWT strategy configuration
+- Implement token validation in guards
+- Handle authentication errors appropriately
+- Use bcrypt for password hashing (salt rounds: 12)
+
+### Guards and Middleware
+- Apply JwtAuthGuard to protected routes
+- Implement custom guards when needed
+- Use proper error handling in guards
+
+```typescript
+@Injectable()
+export class JwtAuthGuard extends AuthGuard('jwt') {
+  canActivate(context: ExecutionContext) {
+    return super.canActivate(context);
+  }
+
+  handleRequest(err, user, info) {
+    if (err || !user) {
+      throw err || new UnauthorizedException();
+    }
+    return user;
+  }
+}
+```
+
+## Testing Guidelines
+
+### Unit Tests
+- Write comprehensive unit tests for all services and controllers
+- Use Jest with NestJS testing utilities
+- Mock external dependencies properly
+- Test both success and error scenarios
+- Achieve high test coverage (aim for >90%)
+
+### Test Structure
+```typescript
+describe('PatientService', () => {
+  let service: PatientService;
+  let patientModel: Model<PatientDocument>;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        PatientService,
+        {
+          provide: getModelToken(Patient.name),
+          useValue: mockPatientModel,
+        },
+      ],
+    }).compile();
+
+    service = module.get<PatientService>(PatientService);
+    patientModel = module.get<Model<PatientDocument>>(getModelToken(Patient.name));
+  });
+
+  it('should create a patient successfully', async () => {
+    // Arrange
+    const createPatientDto = { /* ... */ };
+    
+    // Act
+    const result = await service.create(createPatientDto);
+    
+    // Assert
+    expect(result).toEqual(expectedResult);
+  });
+});
+```
+
+### Mocking Guidelines
+- Mock Mongoose models using jest.Mock
+- Use proper TypeScript typing for mocks
+- Mock external services and dependencies
+- Clear mocks between tests
+
+## Error Handling
+
+### Exception Handling
+- Use NestJS built-in exceptions
+- Implement global exception filters when needed
+- Provide meaningful error messages
+- Log errors appropriately
+
+```typescript
+// Use specific NestJS exceptions
+throw new NotFoundException(`Patient with ID ${id} not found`);
+throw new BadRequestException('Invalid ObjectId');
+throw new ConflictException('User with this email already exists');
+```
+
+### Validation Errors
+- Use class-validator for input validation
+- Provide clear validation error messages
+- Handle validation errors at the application level
+
+## Performance & Best Practices
+
+### Database Optimization
+- Use indexes on frequently queried fields
+- Implement pagination for large datasets
+- Use lean() queries when appropriate
+- Avoid N+1 query problems
+
+### Code Quality
+- Follow SOLID principles
+- Use dependency injection properly
+- Implement proper logging
+- Use environment variables for configuration
+- Implement health checks
+
+## Environment & Configuration
+
+### Environment Variables
+```bash
+# Database
+MONGODB_URI=mongodb://localhost:27017/health-first-api
+
+# JWT
+JWT_SECRET=your-secret-key
+JWT_EXPIRES_IN=1h
+
+# Application
+PORT=3000
+NODE_ENV=development
+```
+
+### Configuration Module
+- Use @nestjs/config for configuration management
+- Validate environment variables
+- Use proper typing for configuration
+
+## Scripts and Commands
+
+### Development
+```bash
+npm run start:dev    # Development with watch mode
+npm run start:debug  # Debug mode
+npm run build        # Build for production
+npm run test         # Run tests
+npm run test:watch   # Run tests in watch mode
+npm run test:cov     # Run tests with coverage
+npm run lint         # Run ESLint
+npm run format       # Format code with Prettier
+```
+
+## Documentation
+- Maintain API documentation
+- Update README for setup instructions
+- Document complex business logic
+- Keep test documentation updated
+
+## Common Patterns to Follow
+
+### Service Response Format
+```typescript
+interface ApiResponse<T> {
+  data: T;
+  message?: string;
+  success: boolean;
+}
+```
+
+### Error Response Format
+```typescript
+interface ErrorResponse {
+  statusCode: number;
+  message: string | string[];
+  error: string;
+  timestamp: string;
+  path: string;
+}
+```
+
+### Async/Await Usage
+- Always use async/await instead of promises
+- Handle errors with try-catch blocks
+- Use proper error propagation
+
+## Security Considerations
+- Validate all inputs
+- Use HTTPS in production
+- Implement rate limiting
+- Sanitize user inputs
+- Use proper CORS configuration
+- Implement request logging
+
+## Code Review Checklist
+- [ ] Code follows TypeScript best practices
+- [ ] All functions have proper error handling
+- [ ] Tests cover success and error scenarios
+- [ ] Database operations use proper error handling
+- [ ] Authentication/authorization is properly implemented
+- [ ] Input validation is comprehensive
+- [ ] Code is properly formatted and linted
+- [ ] No sensitive data is logged or exposed
+- [ ] Performance considerations are addressed
+
+Remember: Write clean, maintainable, and well-tested code. Follow NestJS conventions and best practices consistently throughout the project. 
